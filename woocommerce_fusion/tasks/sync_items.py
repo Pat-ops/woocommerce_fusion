@@ -300,15 +300,15 @@ class SynchroniseItem(SynchroniseWooCommerce):
 		product_fields_changed, wc_product = self.set_product_fields(wc_product, item)
 		if product_fields_changed:
 			wc_product_dirty = True
-
+        
         # Skip saving variable parent products without regular_price
-        if (
-            wc_product.regular_price is None and
-            wc_product.type == "variable" and
-            not wc_product.get("__islocal")
-        ):
-            frappe.logger().info(f"[WooCommerce Fusion] Skipped saving variable parent product '{wc_product.name}' due to missing regular_price (expected for variable products).")
-            return
+		if (
+			wc_product.regular_price is None and
+			wc_product.type == "variable" and
+			not wc_product.get("__islocal")
+		):
+			frappe.logger().info(f"[WooCommerce Fusion] Skipped saving variable parent product '{wc_product.name}' due to missing regular_price (expected for variable products).")
+			return
 
 		if wc_product_dirty:
 			wc_product.save()
