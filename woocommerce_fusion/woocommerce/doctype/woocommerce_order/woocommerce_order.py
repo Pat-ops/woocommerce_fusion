@@ -16,8 +16,6 @@ from woocommerce_fusion.woocommerce.woocommerce_api import (
 	log_and_raise_error,
 )
 
-from woocommerce_fusion.tasks.sync_sales_orders import SynchroniseSalesOrder
-
 WC_ORDER_DELIMITER = "~"
 
 WC_ORDER_STATUS_MAPPING = {
@@ -204,6 +202,8 @@ class WooCommerceOrder(WooCommerceResource):
 
 	@frappe.whitelist()
 	def bulk_sync(order_names):
+		from woocommerce_fusion.tasks.sync_sales_orders import SynchroniseSalesOrder
+		
 		succeeded = []
 		failed = []
 
