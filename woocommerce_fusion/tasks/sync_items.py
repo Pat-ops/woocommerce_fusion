@@ -285,6 +285,14 @@ class SynchroniseItem(SynchroniseWooCommerce):
 
 		self.set_sync_hash()
 
+	def _missing_regular_price(doc) -> bool:
+		val = doc.get("regular_price")
+		try:
+			# consider None, "", "0", 0, 0.0 as missing
+			return val is None or float(val) == 0.0
+		except Exception:
+			return not bool(val)
+
 	def update_woocommerce_product(
 		self, wc_product: WooCommerceProduct, item: ERPNextItemToSync
 	) -> None:
@@ -302,13 +310,15 @@ class SynchroniseItem(SynchroniseWooCommerce):
 		if product_fields_changed:
 			wc_product_dirty = True
 
-		# Skip saving variable parent products without regular_price
 		if (
-			wc_product.regular_price is None and
-			wc_product.type == "variable" and
-			not wc_product.get("__islocal")
+    		wc_product.get("type") == "variable"  # parent variable product
+    		and not wc_product.get("__islocal")   # only skip if it already exists
+    		and self._missing_regular_price(wc_product)
 		):
-			frappe.logger().info(f"[WooCommerce Fusion] Skipped saving variable parent product '{wc_product.name}' due to missing regular_price (expected for variable products).")
+			frappe.logger().info(
+	    		f"[WooCommerce Fusion] Skipping save for variable parent product '{wc_product.name}' "
+	    		f"because regular_price is missing/zero (expected for variable parents)."
+			)
 			return
 
 		if wc_product_dirty:
