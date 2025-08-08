@@ -200,7 +200,6 @@ class WooCommerceOrder(WooCommerceResource):
 				if response.status_code != 201:
 					log_and_raise_error(error_text="update_shipment_tracking failed", response=response)
 
-	@frappe.whitelist()
 	def bulk_sync(order_names):
 		from woocommerce_fusion.tasks.sync_sales_orders import SynchroniseSalesOrder
 		
