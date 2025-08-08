@@ -284,7 +284,8 @@ class SynchroniseItem(SynchroniseWooCommerce):
 			item.item.save()
 
 		self.set_sync_hash()
-
+		
+	@staticmethod
 	def _missing_regular_price(doc) -> bool:
 		val = doc.get("regular_price")
 		try:
