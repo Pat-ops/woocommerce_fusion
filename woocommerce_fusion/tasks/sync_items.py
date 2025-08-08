@@ -528,9 +528,38 @@ class SynchroniseItem(SynchroniseWooCommerce):
 
 					# We expect woocommerce_field_name to be valid JSONPath
 					jsonpath_expr = parse(map.woocommerce_field_name)
-					woocommerce_product_field_matches = jsonpath_expr.find(woocommerce_product_dict)
+					# woocommerce_product_field_matches = jsonpath_expr.find(woocommerce_product_dict)
 
-					setattr(item, erpnext_item_field_name[0], woocommerce_product_field_matches[0].value)
+					# setattr(item, erpnext_item_field_name[0], woocommerce_product_field_matches[0].value)
+					# item_dirty = True
+					matches = jsonpath_expr.find(woocommerce_product_dict)
+
+					# Skip silently if the path yields nothing (prevents IndexError)
+					if not matches:
+						frappe.logger().info(
+							f"[WooFusion] JSONPath '{map.woocommerce_field_name}' empty on "
+							f"{self.woocommerce_product.get('name')}; skip '{erpnext_item_field_name[0]}'"
+						)
+						continue
+
+					# Do NOT set categories on WooCommerce variations (they belong to the parent)
+					if (self.woocommerce_product.get("type") == "variation"
+						and "categories" in map.woocommerce_field_name.lower()):
+						frappe.logger().info(
+							f"[WooFusion] Skip categories mapping for variation "
+							f"{self.woocommerce_product.get('name')}"
+						)
+						continue
+
+					value = matches[0].value
+					# Skip empty strings/lists to avoid writing junk
+					if value in (None, "", []):
+						continue
+					# Unescape HTML entities coming from WC (e.g. '&amp;')
+					if isinstance(value, str):
+						value = unescape(value)
+
+					setattr(item, erpnext_item_field_name[0], value)
 					item_dirty = True
 		return item_dirty, item
 
