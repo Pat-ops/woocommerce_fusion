@@ -652,6 +652,16 @@ class SynchroniseItem(SynchroniseWooCommerce):
 							# For new WooCommerce Products, the nested field may not exist yet, so don't stop the sync
 							continue
 
+					# Skip parent-only fields for WooCommerce variations
+					is_variation = woocommerce_product.get("type") == "variation"
+					path_lower = map.woocommerce_field_name.lower()
+					if is_variation and ("categories" in path_lower or "tags" in path_lower):
+						frappe.logger().info(
+							f"[WooFusion] Skip mapping '{map.woocommerce_field_name}' for variation "
+							f"{woocommerce_product.get('name')} (parent-only field in WooCommerce)"
+						)
+						continue
+
 					# JSONPath parsing typically returns a list, we'll only take the first value
 					woocommerce_product_field_value = woocommerce_product_field_matches[0].value
 
