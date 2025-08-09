@@ -10,7 +10,7 @@ frappe.listview_settings['WooCommerce Order'] = {
       const order_names = selected.map(row => row.name);
 
       frappe.call({
-        method: 'woocommerce_fusion.woocommerce_fusion.doctype.woocommerce_order.woocommerce_order.bulk_sync',
+        method: 'woocommerce_fusion.doctype.woocommerce_order.woocommerce_order.bulk_sync',
         args: { order_names },
         callback: function (r) {
           frappe.msgprint(r.message || __('Sync complete'));
