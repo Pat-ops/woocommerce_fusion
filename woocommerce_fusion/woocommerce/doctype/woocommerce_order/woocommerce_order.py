@@ -200,22 +200,22 @@ class WooCommerceOrder(WooCommerceResource):
 				if response.status_code != 201:
 					log_and_raise_error(error_text="update_shipment_tracking failed", response=response)
 	
-	@frappe.whitelist()
-	def bulk_sync(order_names):
-		from woocommerce_fusion.tasks.sync_sales_orders import SynchroniseSalesOrder  # lazy import
+@frappe.whitelist()
+def bulk_sync(order_names):
+	from woocommerce_fusion.tasks.sync_sales_orders import SynchroniseSalesOrder  # lazy import
 
-		succeeded, failed = [], []
-		for name in frappe.parse_json(order_names):
-			try:
-				wc_order = frappe.get_doc("WooCommerce Order", name)
-				syncer = SynchroniseSalesOrder(woocommerce_order=wc_order)
-				syncer.run()
-				succeeded.append(name)
-			except Exception as err:
-				failed.append(f"{name}: {err}")
-				frappe.log_error(frappe.get_traceback(), frappe._("Bulk Sync Error"))
+	succeeded, failed = [], []
+	for name in frappe.parse_json(order_names):
+		try:
+			wc_order = frappe.get_doc("WooCommerce Order", name)
+			syncer = SynchroniseSalesOrder(woocommerce_order=wc_order)
+			syncer.run()
+			succeeded.append(name)
+		except Exception as err:
+			failed.append(f"{name}: {err}")
+			frappe.log_error(frappe.get_traceback(), frappe._("Bulk Sync Error"))
 
-		msg = frappe._("{} WooCommerce Orders synced successfully.").format(len(succeeded))
-		if failed:
-			msg += "\n" + frappe._("{} failed:\n{}").format(len(failed), "\n".join(failed))
-		return {"message": msg}
+	msg = frappe._("{} WooCommerce Orders synced successfully.").format(len(succeeded))
+	if failed:
+		msg += "\n" + frappe._("{} failed:\n{}").format(len(failed), "\n".join(failed))
+	return {"message": msg}
