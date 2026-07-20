@@ -8,6 +8,7 @@ from woocommerce_fusion.tasks.sync_items import (
 	SynchroniseItem,
 	get_item_price_rate,
 	get_item_sale_price_data,
+	run_manual_item_sync,
 )
 from woocommerce_fusion.woocommerce.woocommerce_api import (
 	generate_woocommerce_record_name_from_domain_and_id,
@@ -20,6 +21,15 @@ class TestWooCommerceSync(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()  # important to call super() methods when extending TestCase.
+
+	@patch("woocommerce_fusion.tasks.sync_items.clear_sync_hash_and_run_item_sync")
+	def test_manual_sync_forces_and_finishes_normal_sync(self, mock_clear_and_sync, *_args):
+		mock_clear_and_sync.return_value = (Mock(), Mock())
+
+		result = run_manual_item_sync("SKU-42")
+
+		mock_clear_and_sync.assert_called_once_with("SKU-42", enqueue=False)
+		self.assertEqual(result, mock_clear_and_sync.return_value)
 
 	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_all")
 	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_cached_doc")

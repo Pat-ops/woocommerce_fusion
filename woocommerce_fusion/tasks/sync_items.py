@@ -724,7 +724,13 @@ def get_item_sale_price_data(item: ERPNextItemToSync) -> frappe._dict | None:
 	)
 
 
-def clear_sync_hash_and_run_item_sync(item_code: str):
+@frappe.whitelist()
+def run_manual_item_sync(item_code: str):
+	"""Force and finish the normal Fusion sync before reporting success to the UI."""
+	return clear_sync_hash_and_run_item_sync(item_code, enqueue=False)
+
+
+def clear_sync_hash_and_run_item_sync(item_code: str, enqueue: bool = True):
 	"""
 	Clear the last sync hash value using db.set_value, as it does not call the ORM triggers
 	and it does not update the modified timestamp (by using the update_modified parameter)
@@ -746,4 +752,5 @@ def clear_sync_hash_and_run_item_sync(item_code: str):
 		)
 
 	if len(iwss) > 0:
-		run_item_sync(item_code=item_code, enqueue=True)
+		return run_item_sync(item_code=item_code, enqueue=enqueue)
+	return (None, None)
