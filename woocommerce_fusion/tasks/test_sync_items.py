@@ -3,7 +3,10 @@ from unittest.mock import MagicMock, Mock, call, patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from woocommerce_fusion.tasks.sync_items import ERPNextItemToSync, SynchroniseItem
+from woocommerce_fusion.tasks.sync_items import (
+	ERPNextItemToSync,
+	SynchroniseItem,
+)
 from woocommerce_fusion.woocommerce.woocommerce_api import (
 	generate_woocommerce_record_name_from_domain_and_id,
 )
@@ -15,6 +18,56 @@ class TestWooCommerceSync(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()  # important to call super() methods when extending TestCase.
+
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_hooks")
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_attr")
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_cached_doc")
+	def test_update_extension_hook_runs_after_mappings_in_same_write(
+		self, mock_get_cached_doc, mock_get_attr, mock_get_hooks, *_args
+	):
+		server = Mock(name="Test Server")
+		mock_get_cached_doc.return_value = server
+		mock_get_hooks.return_value = ["test.first", "test.second"]
+		calls = []
+		wc_product = MagicMock()
+		wc_product.woocommerce_server = "Test Server"
+		wc_product.woocommerce_name = "Current name"
+		wc_product.to_dict.side_effect = [
+			{"sku": "before"},
+			{"sku": "after"},
+		]
+		item = Mock()
+		item.item.item_name = "Current name"
+
+		def first(**context):
+			calls.append(("first", context))
+
+		def second(**context):
+			calls.append(("second", context))
+
+		mock_get_attr.side_effect = [first, second]
+		sync = SynchroniseItem(servers=Mock())
+		with patch.object(sync, "set_product_fields", side_effect=lambda product, wrapped: (calls.append(("mapping", None)) or (False, product))):
+			sync.update_woocommerce_product(wc_product, item)
+
+		self.assertEqual([entry[0] for entry in calls], ["mapping", "first", "second"])
+		wc_product.save.assert_called_once_with()
+		for _name, context in calls[1:]:
+			self.assertIs(context["item"], item.item)
+			self.assertIs(context["woocommerce_product"], wc_product)
+			self.assertIs(context["woocommerce_server"], server)
+			self.assertEqual(context["operation"], "update")
+
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_hooks", return_value=[])
+	def test_update_without_extension_hooks_keeps_noop_behavior(self, _mock_get_hooks, *_args):
+		wc_product = MagicMock()
+		wc_product.woocommerce_name = "Current name"
+		item = Mock()
+		item.item.item_name = "Current name"
+		sync = SynchroniseItem(servers=Mock())
+		with patch.object(sync, "set_product_fields", return_value=(False, wc_product)):
+			sync.update_woocommerce_product(wc_product, item)
+		wc_product.save.assert_not_called()
 
 	@patch.object(SynchroniseItem, "update_item")
 	def test_sync_items_while_passing_item_should_update_item_if_item_is_older(

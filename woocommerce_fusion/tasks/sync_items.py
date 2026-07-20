@@ -22,6 +22,8 @@ from woocommerce_fusion.woocommerce.woocommerce_api import (
 	generate_woocommerce_record_name_from_domain_and_id,
 )
 
+BEFORE_PRODUCT_WRITE_HOOK = "woocommerce_fusion_before_product_write"
+
 
 def run_item_sync_from_hook(doc, method):
 	"""
@@ -300,6 +302,9 @@ class SynchroniseItem(SynchroniseWooCommerce):
 		if product_fields_changed:
 			wc_product_dirty = True
 
+		if self.run_before_product_write_hooks(wc_product, item, operation="update"):
+			wc_product_dirty = True
+
 		if wc_product_dirty:
 			wc_product.save()
 
@@ -373,6 +378,7 @@ class SynchroniseItem(SynchroniseWooCommerce):
 				wc_product.date_on_sale_to = _format_sale_date(sale_price_data.valid_upto)
 
 			self.set_product_fields(wc_product, item)
+			self.run_before_product_write_hooks(wc_product, item, operation="create")
 
 			wc_product.insert()
 			self.woocommerce_product = wc_product
@@ -574,6 +580,31 @@ class SynchroniseItem(SynchroniseWooCommerce):
 					)
 
 		return wc_product_dirty, woocommerce_product
+
+	def run_before_product_write_hooks(
+		self, woocommerce_product: WooCommerceProduct, item: ERPNextItemToSync, operation: str
+	) -> bool:
+		"""Run product extensions after Fusion mappings and before the single remote write.
+
+		Hooks mutate ``woocommerce_product`` in Frappe's configured order. Exceptions
+		are deliberately allowed to abort the sync.
+		"""
+		hooks = frappe.get_hooks(BEFORE_PRODUCT_WRITE_HOOK) or []
+		if not hooks:
+			return False
+
+		before = woocommerce_product.to_dict()
+		woocommerce_server = frappe.get_cached_doc(
+			"WooCommerce Server", woocommerce_product.woocommerce_server
+		)
+		for hook in hooks:
+			frappe.get_attr(hook)(
+				item=item.item,
+				woocommerce_product=woocommerce_product,
+				woocommerce_server=woocommerce_server,
+				operation=operation,
+			)
+		return before != woocommerce_product.to_dict()
 
 	def set_sync_hash(self):
 		"""
