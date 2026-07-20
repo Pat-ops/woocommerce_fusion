@@ -8,6 +8,7 @@ from frappe.tests.utils import FrappeTestCase
 from woocommerce_fusion.woocommerce.doctype.woocommerce_product.woocommerce_product import (
 	WooCommerceProduct,
 )
+from woocommerce_fusion.woocommerce.woocommerce_api import get_wc_parameters_from_filters
 
 
 def _base_product(**overrides) -> dict:
@@ -27,6 +28,12 @@ def _base_product(**overrides) -> dict:
 
 
 class TestWooCommerceProduct(FrappeTestCase):
+	def test_id_filter_uses_scalar_include_for_stable_oauth_signature(self):
+		self.assertEqual(
+			get_wc_parameters_from_filters([["WooCommerce Product", "id", "=", 93]]),
+			{"include": "93"},
+		)
+
 	def test_clean_up_product_clears_sale_price_with_empty_string(self):
 		"""
 		When sale_price is 0, clean_up_product_before_write should send ""

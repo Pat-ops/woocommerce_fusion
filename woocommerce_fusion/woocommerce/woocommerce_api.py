@@ -557,7 +557,8 @@ def get_wc_parameters_from_filters(filters):
 			continue
 		if filter[1] == "id" and filter[2] == "=":
 			# e.g. ['WooCommerce Order', 'id', '=', '11']
-			params["include"] = [filter[3]]
+			# Keep OAuth signing and final query serialization identical.
+			params["include"] = str(filter[3])
 			continue
 		if filter[1] == "id" and filter[2] == "in":
 			# e.g. ['WooCommerce Order', 'id', 'in', ['11', '12', '13']]

@@ -257,7 +257,7 @@ class SynchroniseItem(SynchroniseWooCommerce):
 					self.item.item.modified
 				):
 					self.update_item(self.woocommerce_product, self.item)
-				if get_datetime(self.woocommerce_product.woocommerce_date_modified) < get_datetime(
+				elif get_datetime(self.woocommerce_product.woocommerce_date_modified) < get_datetime(
 					self.item.item.modified
 				):
 					self.update_woocommerce_product(self.woocommerce_product, self.item)
@@ -377,7 +377,7 @@ class SynchroniseItem(SynchroniseWooCommerce):
 				wc_product.date_on_sale_from = _format_sale_date(sale_price_data.valid_from)
 				wc_product.date_on_sale_to = _format_sale_date(sale_price_data.valid_upto)
 
-			self.set_product_fields(wc_product, item)
+			_product_fields_changed, wc_product = self.set_product_fields(wc_product, item)
 			self.run_before_product_write_hooks(wc_product, item, operation="create")
 
 			wc_product.insert()
