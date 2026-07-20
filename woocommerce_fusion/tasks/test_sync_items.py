@@ -6,6 +6,8 @@ from frappe.tests.utils import FrappeTestCase
 from woocommerce_fusion.tasks.sync_items import (
 	ERPNextItemToSync,
 	SynchroniseItem,
+	get_item_price_rate,
+	get_item_sale_price_data,
 )
 from woocommerce_fusion.woocommerce.woocommerce_api import (
 	generate_woocommerce_record_name_from_domain_and_id,
@@ -18,6 +20,38 @@ class TestWooCommerceSync(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()  # important to call super() methods when extending TestCase.
+
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_all")
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_cached_doc")
+	def test_regular_price_lookup_uses_item_code(self, mock_get_cached_doc, mock_get_all, *_args):
+		mock_get_cached_doc.return_value = Mock(enable_price_list_sync=1, price_list="Web")
+		mock_get_all.return_value = []
+		item = Mock()
+		item.item.item_code = "SKU-42"
+		item.item.item_name = "Public product name"
+		item.item_woocommerce_server.woocommerce_server = "Test Server"
+
+		get_item_price_rate(item)
+
+		self.assertEqual(mock_get_all.call_args.kwargs["filters"]["item_code"], "SKU-42")
+
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_all")
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_cached_doc")
+	def test_sale_price_lookup_uses_item_code(self, mock_get_cached_doc, mock_get_all, *_args):
+		mock_get_cached_doc.return_value = Mock(
+			enable_price_list_sync=1,
+			enable_sales_price_list_sync=1,
+			sales_price_list="Sale",
+		)
+		mock_get_all.return_value = []
+		item = Mock()
+		item.item.item_code = "SKU-42"
+		item.item.item_name = "Public product name"
+		item.item_woocommerce_server.woocommerce_server = "Test Server"
+
+		get_item_sale_price_data(item)
+
+		self.assertEqual(mock_get_all.call_args.kwargs["filters"]["item_code"], "SKU-42")
 
 	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_hooks")
 	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_attr")
