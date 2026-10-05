@@ -7,6 +7,7 @@ from woocommerce_fusion.tasks.sync_items import (
 	ERPNextItemToSync,
 	SynchroniseItem,
 	run_item_sync_from_hook,
+	run_manual_item_sync,
 )
 from woocommerce_fusion.woocommerce.woocommerce_api import (
 	generate_woocommerce_record_name_from_domain_and_id,
@@ -19,6 +20,204 @@ class TestWooCommerceSync(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()  # important to call super() methods when extending TestCase.
+
+	@patch("woocommerce_fusion.tasks.sync_items.clear_sync_hash")
+	def test_manual_sync_forces_and_finishes_normal_sync(
+		self, mock_clear_sync_hash, _mock_set_sync_hash, mock_run_item_sync
+	):
+		expected = (Mock(), Mock())
+		mock_clear_sync_hash.return_value = 1
+		mock_run_item_sync.return_value = expected
+
+		result = run_manual_item_sync("SKU-42")
+
+		mock_clear_sync_hash.assert_called_once_with("SKU-42")
+		mock_run_item_sync.assert_called_once_with(item_code="SKU-42")
+		self.assertEqual(result, expected)
+
+		mock_clear_sync_hash.reset_mock()
+		mock_run_item_sync.reset_mock()
+		mock_clear_sync_hash.return_value = 0
+
+		result = run_manual_item_sync("SKU-42")
+
+		mock_clear_sync_hash.assert_called_once_with("SKU-42")
+		mock_run_item_sync.assert_not_called()
+		self.assertEqual(result, (None, None))
+
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_hooks")
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_attr")
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_cached_doc")
+	def test_update_extension_hook_runs_after_mappings_in_same_write(
+		self, mock_get_cached_doc, mock_get_attr, mock_get_hooks, *_args
+	):
+		server = Mock(name="Test Server")
+		mock_get_cached_doc.return_value = server
+		mock_get_hooks.return_value = ["test.first", "test.second"]
+		calls = []
+		wc_product = MagicMock()
+		wc_product.woocommerce_server = "Test Server"
+		wc_product.woocommerce_name = "Current name"
+		wc_product.to_dict.side_effect = [
+			{"sku": "before"},
+			{"sku": "after"},
+		]
+		item = Mock()
+		item.item.item_name = "Current name"
+
+		def first(**context):
+			calls.append(("first", context))
+
+		def second(**context):
+			calls.append(("second", context))
+
+		mock_get_attr.side_effect = [first, second]
+		sync = SynchroniseItem(servers=Mock())
+		with patch.object(
+			sync,
+			"set_product_fields",
+			side_effect=lambda product, wrapped: (calls.append(("mapping", None)) or (False, product)),
+		):
+			sync.update_woocommerce_product(wc_product, item)
+
+		self.assertEqual([entry[0] for entry in calls], ["mapping", "first", "second"])
+		wc_product.save.assert_called_once_with()
+		for _name, context in calls[1:]:
+			self.assertIs(context["item"], item.item)
+			self.assertIs(context["woocommerce_product"], wc_product)
+			self.assertIs(context["woocommerce_server"], server)
+			self.assertEqual(context["operation"], "update")
+
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_hooks", return_value=[])
+	def test_update_without_extension_hooks_keeps_noop_behavior(self, _mock_get_hooks, *_args):
+		wc_product = MagicMock()
+		wc_product.woocommerce_name = "Current name"
+		item = Mock()
+		item.item.item_name = "Current name"
+		sync = SynchroniseItem(servers=Mock())
+		with patch.object(sync, "set_product_fields", return_value=(False, wc_product)):
+			sync.update_woocommerce_product(wc_product, item)
+		wc_product.save.assert_not_called()
+
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_cached_doc")
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_attr")
+	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_hooks", return_value=["test.failing"])
+	def test_extension_hook_error_aborts_before_update_write(
+		self, _mock_get_hooks, mock_get_attr, _mock_get_cached_doc, *_args
+	):
+		mock_get_attr.return_value = Mock(side_effect=RuntimeError("hook failed"))
+		wc_product = MagicMock()
+		wc_product.woocommerce_name = "Current name"
+		wc_product.to_dict.return_value = {"sku": "before"}
+		item = Mock()
+		item.item.item_name = "Current name"
+		sync = SynchroniseItem(servers=Mock())
+
+		with (
+			patch.object(sync, "set_product_fields", return_value=(False, wc_product)),
+			self.assertRaisesRegex(RuntimeError, "hook failed"),
+		):
+			sync.update_woocommerce_product(wc_product, item)
+
+		wc_product.save.assert_not_called()
+
+	@patch.object(SynchroniseItem, "run_before_product_write_hooks")
+	def test_inbound_update_does_not_run_product_write_hook(
+		self, mock_product_hook, _mock_set_sync_hash, _mock_run_item_sync
+	):
+		sync = SynchroniseItem(servers=Mock())
+		wc_product = MagicMock()
+		wc_product.woocommerce_name = "Remote name"
+		wc_product.woocommerce_server = "Test Server"
+		wc_product.images = "[]"
+		item = Mock()
+		item.item.item_name = "Local name"
+		item.item.image = None
+		with (
+			patch.object(sync, "set_item_fields", return_value=(False, item.item)),
+			patch("woocommerce_fusion.tasks.sync_items.frappe.get_cached_doc") as get_server,
+		):
+			get_server.return_value.enable_image_sync = False
+			sync.update_item(wc_product, item)
+		mock_product_hook.assert_not_called()
+
+	def test_create_extension_hook_runs_once_after_mappings(self, _mock_set_sync_hash, _mock_run_item_sync):
+		calls = []
+		wc_product = MagicMock()
+		wc_product.mapped_value = False
+		wc_product.hook_value = False
+		wc_product.to_dict.side_effect = lambda: {
+			"mapped_value": wc_product.mapped_value,
+			"hook_value": wc_product.hook_value,
+		}
+		server = Mock(name="Test Server")
+		server.name_by = "Item Name"
+		item = Mock()
+		item.item_woocommerce_server.woocommerce_server = "Test Server"
+		item.item.item_name = "Test Item"
+		item.item.has_variants = 0
+		item.item.variant_of = None
+
+		def set_product_fields(product, _item):
+			calls.append("mapping")
+			product.mapped_value = True
+			return False, product
+
+		def run_hook(**context):
+			self.assertTrue(context["woocommerce_product"].mapped_value)
+			calls.append("hook")
+			context["woocommerce_product"].hook_value = True
+
+		hook = Mock(side_effect=run_hook)
+		with (
+			patch("woocommerce_fusion.tasks.sync_items.frappe.get_doc", return_value=wc_product),
+			patch("woocommerce_fusion.tasks.sync_items.frappe.get_cached_doc", return_value=server),
+			patch("woocommerce_fusion.tasks.sync_items.frappe.get_hooks", return_value=["test.create"]),
+			patch("woocommerce_fusion.tasks.sync_items.frappe.get_attr", return_value=hook),
+			patch("woocommerce_fusion.tasks.sync_items.get_item_price_rate", return_value=None),
+			patch("woocommerce_fusion.tasks.sync_items.get_item_sale_price_data", return_value=None),
+		):
+			sync = SynchroniseItem(servers=Mock())
+			with patch.object(sync, "set_product_fields", side_effect=set_product_fields):
+				result = sync._build_create_product(item)
+
+		self.assertIs(result, wc_product)
+		self.assertEqual(calls, ["mapping", "hook"])
+		hook.assert_called_once_with(
+			item=item.item,
+			woocommerce_product=wc_product,
+			woocommerce_server=server,
+			operation="create",
+		)
+
+	def test_update_payload_includes_extension_hook_change(self, _mock_set_sync_hash, _mock_run_item_sync):
+		wc_product = MagicMock()
+		wc_product.woocommerce_name = "Current name"
+		wc_product.woocommerce_server = "Test Server"
+		wc_product.description = "before"
+		wc_product.to_dict.side_effect = lambda: {"description": wc_product.description}
+		item = Mock()
+		item.item.item_name = "Current name"
+		server = Mock(name="Test Server")
+
+		def run_hook(**context):
+			context["woocommerce_product"].description = "after"
+
+		with (
+			patch("woocommerce_fusion.tasks.sync_items.frappe.get_cached_doc", return_value=server),
+			patch("woocommerce_fusion.tasks.sync_items.frappe.get_hooks", return_value=["test.batch"]),
+			patch("woocommerce_fusion.tasks.sync_items.frappe.get_attr", return_value=run_hook),
+			patch(
+				"woocommerce_fusion.tasks.sync_items.WooCommerceProduct."
+				"deserialize_attributes_of_type_dict_or_list",
+				side_effect=lambda value: value,
+			),
+		):
+			sync = SynchroniseItem(servers=Mock(), woocommerce_product=wc_product)
+			with patch.object(sync, "set_product_fields", return_value=(False, wc_product)):
+				payload = sync._build_update_payload(item)
+
+		self.assertEqual(payload, {"description": "after"})
 
 	@patch.object(SynchroniseItem, "update_item")
 	def test_sync_items_while_passing_item_should_update_item_if_item_is_older(
@@ -58,6 +257,30 @@ class TestWooCommerceSync(FrappeTestCase):
 
 		# Assert that the item need to be updated
 		mock_update_item.assert_called_once_with(wc_product, sync.item)
+
+	@patch.object(SynchroniseItem, "update_woocommerce_product")
+	@patch.object(SynchroniseItem, "update_item")
+	def test_inbound_update_cannot_flip_to_outbound_in_same_run(
+		self, mock_update_item, mock_update_product, _mock_set_sync_hash, _mock_run_item_sync
+	):
+		sync = SynchroniseItem(servers=Mock())
+		item = frappe.get_doc({"doctype": "Item"})
+		item.modified = "2023-01-01"
+		row = item.append("woocommerce_servers")
+		row.woocommerce_last_sync_hash = "2022-01-01"
+		sync.item = ERPNextItemToSync(item, 1)
+		wc_product = frappe.get_doc({"doctype": "WooCommerce Product"})
+		wc_product.woocommerce_date_modified = "2023-12-31"
+		sync.woocommerce_product = wc_product
+
+		def mark_item_as_newer(*_args):
+			item.modified = "2024-01-01"
+
+		mock_update_item.side_effect = mark_item_as_newer
+		sync.sync_wc_product_with_erpnext_item()
+
+		mock_update_item.assert_called_once_with(wc_product, sync.item)
+		mock_update_product.assert_not_called()
 
 	@patch("woocommerce_fusion.tasks.sync_items.frappe")
 	@patch.object(SynchroniseItem, "update_woocommerce_product")
@@ -266,6 +489,7 @@ class TestWooCommerceSync(FrappeTestCase):
 		item_mock = MagicMock()
 		item_mock.item_woocommerce_server = item_woocommerce_server_mock
 		item_mock.item.item_name = "Test Item"
+		item_mock.item.get.return_value = None
 		item_mock.item.has_variants = 0
 		item_mock.item.variant_of = None
 
@@ -323,6 +547,7 @@ class TestWooCommerceSync(FrappeTestCase):
 		item_mock = MagicMock()
 		item_mock.item_woocommerce_server = item_woocommerce_server_mock
 		item_mock.item.item_name = "Test Item"
+		item_mock.item.get.return_value = None
 		item_mock.item.has_variants = 0
 		item_mock.item.variant_of = "696969"
 
@@ -372,6 +597,7 @@ class TestWooCommerceSync(FrappeTestCase):
 		item_mock = MagicMock()
 		item_mock.item_woocommerce_server = item_woocommerce_server_mock
 		item_mock.item.item_name = "Test Item"
+		item_mock.item.get.return_value = None
 		item_mock.item.has_variants = 1
 		item_mock.item.variant_of = None
 
