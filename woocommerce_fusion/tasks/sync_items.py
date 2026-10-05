@@ -1100,6 +1100,14 @@ def clear_sync_hash(item_code: str) -> int:
 	return len(iwss)
 
 
+@frappe.whitelist()
+def run_manual_item_sync(item_code: str):
+	"""Force and finish the normal Fusion sync before reporting success to the UI."""
+	if clear_sync_hash(item_code) > 0:
+		return run_item_sync(item_code=item_code)
+	return (None, None)
+
+
 def clear_sync_hash_and_run_item_sync(item_code: str):
 	if clear_sync_hash(item_code) > 0:
 		run_item_sync(item_code=item_code, enqueue=True)

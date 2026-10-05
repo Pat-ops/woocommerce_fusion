@@ -6,6 +6,7 @@ from frappe.tests.utils import FrappeTestCase
 from woocommerce_fusion.tasks.sync_items import (
 	ERPNextItemToSync,
 	SynchroniseItem,
+	run_manual_item_sync,
 	run_item_sync_from_hook,
 )
 from woocommerce_fusion.woocommerce.woocommerce_api import (
@@ -19,6 +20,30 @@ class TestWooCommerceSync(FrappeTestCase):
 	@classmethod
 	def setUpClass(cls):
 		super().setUpClass()  # important to call super() methods when extending TestCase.
+
+	@patch("woocommerce_fusion.tasks.sync_items.clear_sync_hash")
+	def test_manual_sync_forces_and_finishes_normal_sync(
+		self, mock_clear_sync_hash, _mock_set_sync_hash, mock_run_item_sync
+	):
+		expected = (Mock(), Mock())
+		mock_clear_sync_hash.return_value = 1
+		mock_run_item_sync.return_value = expected
+
+		result = run_manual_item_sync("SKU-42")
+
+		mock_clear_sync_hash.assert_called_once_with("SKU-42")
+		mock_run_item_sync.assert_called_once_with(item_code="SKU-42")
+		self.assertEqual(result, expected)
+
+		mock_clear_sync_hash.reset_mock()
+		mock_run_item_sync.reset_mock()
+		mock_clear_sync_hash.return_value = 0
+
+		result = run_manual_item_sync("SKU-42")
+
+		mock_clear_sync_hash.assert_called_once_with("SKU-42")
+		mock_run_item_sync.assert_not_called()
+		self.assertEqual(result, (None, None))
 
 	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_hooks")
 	@patch("woocommerce_fusion.tasks.sync_items.frappe.get_attr")
