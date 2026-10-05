@@ -238,6 +238,30 @@ class TestWooCommerceSync(FrappeTestCase):
 		# Assert that the item need to be updated
 		mock_update_item.assert_called_once_with(wc_product, sync.item)
 
+	@patch.object(SynchroniseItem, "update_woocommerce_product")
+	@patch.object(SynchroniseItem, "update_item")
+	def test_inbound_update_cannot_flip_to_outbound_in_same_run(
+		self, mock_update_item, mock_update_product, _mock_set_sync_hash, _mock_run_item_sync
+	):
+		sync = SynchroniseItem(servers=Mock())
+		item = frappe.get_doc({"doctype": "Item"})
+		item.modified = "2023-01-01"
+		row = item.append("woocommerce_servers")
+		row.woocommerce_last_sync_hash = "2022-01-01"
+		sync.item = ERPNextItemToSync(item, 1)
+		wc_product = frappe.get_doc({"doctype": "WooCommerce Product"})
+		wc_product.woocommerce_date_modified = "2023-12-31"
+		sync.woocommerce_product = wc_product
+
+		def mark_item_as_newer(*_args):
+			item.modified = "2024-01-01"
+
+		mock_update_item.side_effect = mark_item_as_newer
+		sync.sync_wc_product_with_erpnext_item()
+
+		mock_update_item.assert_called_once_with(wc_product, sync.item)
+		mock_update_product.assert_not_called()
+
 	@patch("woocommerce_fusion.tasks.sync_items.frappe")
 	@patch.object(SynchroniseItem, "update_woocommerce_product")
 	def test_sync_items_while_passing_item_should_update_wc_product_if_item_is_newer(

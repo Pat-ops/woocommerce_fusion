@@ -452,7 +452,7 @@ class SynchroniseItem(SynchroniseWooCommerce):
 					self.item.item.modified
 				):
 					self.update_item(self.woocommerce_product, self.item)
-				if get_datetime(self.woocommerce_product.woocommerce_date_modified) < get_datetime(
+				elif get_datetime(self.woocommerce_product.woocommerce_date_modified) < get_datetime(
 					self.item.item.modified
 				):
 					self.update_woocommerce_product(self.woocommerce_product, self.item)
