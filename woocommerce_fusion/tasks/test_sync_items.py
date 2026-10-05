@@ -6,8 +6,8 @@ from frappe.tests.utils import FrappeTestCase
 from woocommerce_fusion.tasks.sync_items import (
 	ERPNextItemToSync,
 	SynchroniseItem,
-	run_manual_item_sync,
 	run_item_sync_from_hook,
+	run_manual_item_sync,
 )
 from woocommerce_fusion.woocommerce.woocommerce_api import (
 	generate_woocommerce_record_name_from_domain_and_id,
@@ -76,9 +76,7 @@ class TestWooCommerceSync(FrappeTestCase):
 		with patch.object(
 			sync,
 			"set_product_fields",
-			side_effect=lambda product, wrapped: (
-				calls.append(("mapping", None)) or (False, product)
-			),
+			side_effect=lambda product, wrapped: (calls.append(("mapping", None)) or (False, product)),
 		):
 			sync.update_woocommerce_product(wc_product, item)
 
@@ -143,9 +141,7 @@ class TestWooCommerceSync(FrappeTestCase):
 			sync.update_item(wc_product, item)
 		mock_product_hook.assert_not_called()
 
-	def test_create_extension_hook_runs_once_after_mappings(
-		self, _mock_set_sync_hash, _mock_run_item_sync
-	):
+	def test_create_extension_hook_runs_once_after_mappings(self, _mock_set_sync_hash, _mock_run_item_sync):
 		calls = []
 		wc_product = MagicMock()
 		wc_product.mapped_value = False
@@ -194,9 +190,7 @@ class TestWooCommerceSync(FrappeTestCase):
 			operation="create",
 		)
 
-	def test_update_payload_includes_extension_hook_change(
-		self, _mock_set_sync_hash, _mock_run_item_sync
-	):
+	def test_update_payload_includes_extension_hook_change(self, _mock_set_sync_hash, _mock_run_item_sync):
 		wc_product = MagicMock()
 		wc_product.woocommerce_name = "Current name"
 		wc_product.woocommerce_server = "Test Server"
