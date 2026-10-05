@@ -178,6 +178,7 @@ class TestWooCommerceSync(FrappeTestCase):
 			patch("woocommerce_fusion.tasks.sync_items.frappe.get_cached_doc", return_value=server),
 			patch("woocommerce_fusion.tasks.sync_items.frappe.get_hooks", return_value=["test.create"]),
 			patch("woocommerce_fusion.tasks.sync_items.frappe.get_attr", return_value=hook),
+			patch("woocommerce_fusion.tasks.sync_items.get_item_price_rate", return_value=None),
 			patch("woocommerce_fusion.tasks.sync_items.get_item_sale_price_data", return_value=None),
 		):
 			sync = SynchroniseItem(servers=Mock())
@@ -494,6 +495,7 @@ class TestWooCommerceSync(FrappeTestCase):
 		item_mock = MagicMock()
 		item_mock.item_woocommerce_server = item_woocommerce_server_mock
 		item_mock.item.item_name = "Test Item"
+		item_mock.item.get.return_value = None
 		item_mock.item.has_variants = 0
 		item_mock.item.variant_of = None
 
@@ -551,6 +553,7 @@ class TestWooCommerceSync(FrappeTestCase):
 		item_mock = MagicMock()
 		item_mock.item_woocommerce_server = item_woocommerce_server_mock
 		item_mock.item.item_name = "Test Item"
+		item_mock.item.get.return_value = None
 		item_mock.item.has_variants = 0
 		item_mock.item.variant_of = "696969"
 
@@ -600,6 +603,7 @@ class TestWooCommerceSync(FrappeTestCase):
 		item_mock = MagicMock()
 		item_mock.item_woocommerce_server = item_woocommerce_server_mock
 		item_mock.item.item_name = "Test Item"
+		item_mock.item.get.return_value = None
 		item_mock.item.has_variants = 1
 		item_mock.item.variant_of = None
 
