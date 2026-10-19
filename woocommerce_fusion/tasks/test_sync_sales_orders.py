@@ -456,6 +456,109 @@ class TestWooCommerceSync(FrappeTestCase):
 		self.assertIsNone(mock_sales_order.woocommerce_payment_entry)
 		mock_frappe_new_doc.assert_not_called()
 
+	@patch("woocommerce_fusion.tasks.sync_sales_orders.frappe.new_doc")
+	@patch("woocommerce_fusion.tasks.sync_sales_orders.frappe.log_error")
+	def test_unmapped_payment_method_is_logged_and_skipped(
+		self, mock_log_error, mock_frappe_new_doc, mock_get_wc_servers
+	):
+		"""
+		Test that an unmapped payment method is logged and skipped instead of raising, and that the
+		attempted flag stays unset so a later sync retries the Payment Entry
+		"""
+		# Initialise class
+		sync = SynchroniseSalesOrder()
+
+		# Arrange
+		wc_order = frappe._dict(
+			{
+				"payment_method": "mollie_wc_gateway_klarna",
+				"date_paid": "2023-01-01",
+				"name": "wc_order_1",
+				"payment_method_title": "Klarna",
+				"total": 100,
+				"id": "123",
+			}
+		)
+
+		mock_sales_order = frappe._dict(
+			woocommerce_server="example.com",
+			woocommerce_payment_entry=None,
+			customer="customer_1",
+			grand_total=100,
+			name="SO-0001",
+			docstatus=1,
+			per_billed=0,
+		)
+
+		mock_get_wc_servers.return_value = frappe._dict(
+			name="example.com",
+			enable_payments_sync=1,
+			woocommerce_server_url="http://example.com",
+			payment_method_bank_account_mapping=json.dumps({"PayPal": "Bank Account"}),
+			payment_method_gl_account_mapping=json.dumps({"PayPal": "GL Account"}),
+		)
+
+		# Act
+		result = sync.create_and_link_payment_entry(wc_order, mock_sales_order)
+
+		# Assert
+		self.assertIs(result, False)
+		mock_log_error.assert_called_once()
+		mock_frappe_new_doc.assert_not_called()
+		self.assertIsNone(mock_sales_order.woocommerce_payment_entry)
+		self.assertFalse(mock_sales_order.custom_attempted_woocommerce_auto_payment_entry)
+
+	@patch("woocommerce_fusion.tasks.sync_sales_orders.frappe.new_doc")
+	@patch("woocommerce_fusion.tasks.sync_sales_orders.frappe.log_error")
+	def test_payment_method_without_gl_account_is_logged_and_skipped(
+		self, mock_log_error, mock_frappe_new_doc, mock_get_wc_servers
+	):
+		"""
+		Test that a payment method with a bank account but no G/L account is logged and skipped
+		"""
+		# Initialise class
+		sync = SynchroniseSalesOrder()
+
+		# Arrange
+		wc_order = frappe._dict(
+			{
+				"payment_method": "PayPal",
+				"date_paid": "2023-01-01",
+				"name": "wc_order_1",
+				"payment_method_title": "PayPal",
+				"total": 100,
+				"id": "123",
+			}
+		)
+
+		mock_sales_order = frappe._dict(
+			woocommerce_server="example.com",
+			woocommerce_payment_entry=None,
+			customer="customer_1",
+			grand_total=100,
+			name="SO-0001",
+			docstatus=1,
+			per_billed=0,
+		)
+
+		mock_get_wc_servers.return_value = frappe._dict(
+			name="example.com",
+			enable_payments_sync=1,
+			woocommerce_server_url="http://example.com",
+			payment_method_bank_account_mapping=json.dumps({"PayPal": "Bank Account"}),
+			payment_method_gl_account_mapping=json.dumps({}),
+		)
+
+		# Act
+		result = sync.create_and_link_payment_entry(wc_order, mock_sales_order)
+
+		# Assert
+		self.assertIs(result, False)
+		mock_log_error.assert_called_once()
+		mock_frappe_new_doc.assert_not_called()
+		self.assertIsNone(mock_sales_order.woocommerce_payment_entry)
+		self.assertFalse(mock_sales_order.custom_attempted_woocommerce_auto_payment_entry)
+
 	def test_contact_found_with_email(self, mock_get_cached_doc):
 		result = find_existing_contact(email="test@test.test", phone=None)
 		self.assertIsNotNone(result)
