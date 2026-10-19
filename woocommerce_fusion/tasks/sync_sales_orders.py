@@ -331,17 +331,34 @@ class SynchroniseSalesOrder(SynchroniseWooCommerce):
 			# Get Company Bank Account for this Payment Method
 			payment_method_bank_account_mapping = json.loads(wc_server.payment_method_bank_account_mapping)
 
+			# An unmapped payment method must not roll back the whole Sales Order: log it and leave
+			# custom_attempted_woocommerce_auto_payment_entry unset so a later sync retries the Payment
+			# Entry once the mapping has been completed on the WooCommerce Server
 			if wc_order.payment_method not in payment_method_bank_account_mapping:
-				raise KeyError(
-					f"WooCommerce payment method {wc_order.payment_method} not found in WooCommerce Server"
+				frappe.log_error(
+					"WooCommerce Payment Method Not Mapped",
+					f"Payment method '{wc_order.payment_method}' of WooCommerce Order {wc_order.name} "
+					f"(ID {wc_order.id}) is not mapped, no Payment Entry created for Sales Order "
+					f"{sales_order.name}. Add the method to 'Map Bank Accounts to Payment Methods' and "
+					f"'Map GL Accounts to Payment Methods' on WooCommerce Server {wc_server.name}, then re-sync the order.",
 				)
+				return False
 
 			company_bank_account = payment_method_bank_account_mapping[wc_order.payment_method]
 
 			if company_bank_account:
 				# Get G/L Account for this Payment Method
 				payment_method_gl_account_mapping = json.loads(wc_server.payment_method_gl_account_mapping)
-				company_gl_account = payment_method_gl_account_mapping[wc_order.payment_method]
+				company_gl_account = payment_method_gl_account_mapping.get(wc_order.payment_method)
+				if not company_gl_account:
+					frappe.log_error(
+						"WooCommerce Payment Method Not Mapped",
+						f"Payment method '{wc_order.payment_method}' of WooCommerce Order {wc_order.name} "
+						f"(ID {wc_order.id}) has no G/L account, no Payment Entry created for Sales Order "
+						f"{sales_order.name}. Add the method to 'Map GL Accounts to Payment Methods' on "
+						f"WooCommerce Server {wc_server.name}.",
+					)
+					return False
 
 				# Create a new Payment Entry
 				company = frappe.get_value("Account", company_gl_account, "company")
